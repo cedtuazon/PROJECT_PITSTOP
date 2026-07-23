@@ -29,48 +29,63 @@ function dummyTerritoryManager(seed) {
   return TERRITORY_MANAGERS[seed % TERRITORY_MANAGERS.length];
 }
 
+/* Fabricated operational status for the "status at a glance" ops view —
+   no real monitoring feed behind this, just a stand-in for the concept.
+   Roughly 70% normal / 20% needs attention / 10% down, deterministic per seed. */
+const STATUS_LEVELS = {
+  normal: { label: "Operational", color: "#22c55e" },
+  attention: { label: "Needs Attention", color: "#f59e0b" },
+  down: { label: "Down", color: "#ef4444" },
+};
+function dummyStatus(seed) {
+  const r = (seed * 13) % 10;
+  if (r < 7) return "normal";
+  if (r < 9) return "attention";
+  return "down";
+}
+
 const RAW_STATIONS = [
   // --- 4 existing EV-ready stations ---
-  { name: "PitStop EDSA Guadalupe", lat: 14.5641, lng: 121.0409, type: "ev" },
-  { name: "PitStop Commonwealth Ave", lat: 14.6973, lng: 121.0827, type: "ev" },
-  { name: "PitStop Macapagal Blvd", lat: 14.5192, lng: 120.9483, type: "ev" },
-  { name: "PitStop C5 Libis", lat: 14.6098, lng: 121.0797, type: "ev" },
+  { name: "EDSA Guadalupe", lat: 14.5642, lng: 121.0405, type: "ev" },
+  { name: "Commonwealth Ave", lat: 14.6889, lng: 121.0799, type: "ev" },
+  { name: "Macapagal Blvd", lat: 14.5043, lng: 120.9866, type: "ev" },
+  { name: "C5 Libis", lat: 14.6101, lng: 121.0789, type: "ev" },
 
   // --- 10 EV scoring candidates (gas-only, being evaluated) ---
-  { name: "PitStop Quezon Ave cor. Timog", lat: 14.6329, lng: 121.0335, type: "candidate" },
-  { name: "PitStop Ortigas Ave Ext", lat: 14.5813, lng: 121.0764, type: "candidate" },
-  { name: "PitStop Roxas Blvd Pasay", lat: 14.5453, lng: 120.9910, type: "candidate" },
-  { name: "PitStop Marcos Highway Marikina", lat: 14.6420, lng: 121.1090, type: "candidate" },
-  { name: "PitStop Alabang-Zapote Rd", lat: 14.4189, lng: 121.0198, type: "candidate" },
-  { name: "PitStop Congressional Ave", lat: 14.6588, lng: 121.0198, type: "candidate" },
-  { name: "PitStop Shaw Blvd Mandaluyong", lat: 14.5809, lng: 121.0409, type: "candidate" },
-  { name: "PitStop Taft Ave cor. Vito Cruz", lat: 14.5661, lng: 120.9927, type: "candidate" },
-  { name: "PitStop Katipunan Ave", lat: 14.6339, lng: 121.0731, type: "candidate" },
-  { name: "PitStop Sucat Rd Parañaque", lat: 14.4741, lng: 121.0198, type: "candidate" },
+  { name: "Quezon Ave cor. Timog", lat: 14.632, lng: 121.0337, type: "candidate" },
+  { name: "Ortigas Ave Ext", lat: 14.5832, lng: 121.0741, type: "candidate" },
+  { name: "Roxas Blvd Pasay", lat: 14.5468, lng: 120.9915, type: "candidate" },
+  { name: "Marcos Highway Marikina", lat: 14.6409, lng: 121.1083, type: "candidate" },
+  { name: "Alabang-Zapote Rd", lat: 14.4194, lng: 121.0203, type: "candidate" },
+  { name: "Congressional Ave", lat: 14.6577, lng: 121.0219, type: "candidate" },
+  { name: "Shaw Blvd Mandaluyong", lat: 14.5802, lng: 121.0424, type: "candidate" },
+  { name: "Taft Ave cor. Vito Cruz", lat: 14.5632, lng: 120.9926, type: "candidate" },
+  { name: "Katipunan Ave", lat: 14.6337, lng: 121.0721, type: "candidate" },
+  { name: "Sucat Rd Parañaque", lat: 14.4784, lng: 121.0162, type: "candidate" },
 
   // --- 22 gas-only network stations ---
-  { name: "PitStop Aurora Blvd Cubao", lat: 14.6198, lng: 121.0537, type: "gas" },
-  { name: "PitStop España Blvd", lat: 14.6069, lng: 120.9925, type: "gas" },
-  { name: "PitStop Recto Ave", lat: 14.6035, lng: 120.9843, type: "gas" },
-  { name: "PitStop Pasong Tamo", lat: 14.5570, lng: 121.0170, type: "gas" },
-  { name: "PitStop Buendia Ave", lat: 14.5566, lng: 121.0284, type: "gas" },
-  { name: "PitStop Kalayaan Ave", lat: 14.5644, lng: 121.0511, type: "gas" },
-  { name: "PitStop Visayas Ave", lat: 14.6699, lng: 121.0483, type: "gas" },
-  { name: "PitStop Mindanao Ave", lat: 14.6805, lng: 121.0264, type: "gas" },
-  { name: "PitStop Rizal Ave Caloocan", lat: 14.6572, lng: 120.9842, type: "gas" },
-  { name: "PitStop Malabon Poblacion", lat: 14.6627, lng: 120.9567, type: "gas" },
-  { name: "PitStop Navotas Boulevard", lat: 14.6667, lng: 120.9418, type: "gas" },
-  { name: "PitStop Valenzuela McArthur Hwy", lat: 14.7000, lng: 120.9822, type: "gas" },
-  { name: "PitStop Fairview", lat: 14.7325, lng: 121.0625, type: "gas" },
-  { name: "PitStop Novaliches", lat: 14.7180, lng: 121.0403, type: "gas" },
-  { name: "PitStop Marikina Riverbanks", lat: 14.6355, lng: 121.0995, type: "gas" },
-  { name: "PitStop Pasig Kapasigan", lat: 14.5764, lng: 121.0851, type: "gas" },
-  { name: "PitStop Taguig McKinley Rd", lat: 14.5473, lng: 121.0530, type: "gas" },
-  { name: "PitStop BGC 5th Ave", lat: 14.5508, lng: 121.0475, type: "gas" },
-  { name: "PitStop Muntinlupa National Rd", lat: 14.4081, lng: 121.0415, type: "gas" },
-  { name: "PitStop Las Piñas Zapote", lat: 14.4499, lng: 120.9829, type: "gas" },
-  { name: "PitStop San Juan Greenhills", lat: 14.6019, lng: 121.0355, type: "gas" },
-  { name: "PitStop Pandacan", lat: 14.5892, lng: 121.0034, type: "gas" },
+  { name: "Aurora Blvd Cubao", lat: 14.6199, lng: 121.0548, type: "gas" },
+  { name: "España Blvd", lat: 14.6108, lng: 120.9945, type: "gas" },
+  { name: "Recto Ave", lat: 14.6072, lng: 120.9849, type: "gas" },
+  { name: "Pasong Tamo", lat: 14.5565, lng: 121.0178, type: "gas" },
+  { name: "Buendia Ave", lat: 14.5557, lng: 121.0285, type: "gas" },
+  { name: "Kalayaan Ave", lat: 14.5637, lng: 121.0505, type: "gas" },
+  { name: "Visayas Ave", lat: 14.6699, lng: 121.0474, type: "gas" },
+  { name: "Mindanao Ave", lat: 14.6811, lng: 121.0257, type: "gas" },
+  { name: "Rizal Ave Caloocan", lat: 14.6539, lng: 120.983, type: "gas" },
+  { name: "Malabon Poblacion", lat: 14.6612, lng: 120.9618, type: "gas" },
+  { name: "Navotas Boulevard", lat: 14.6639, lng: 120.9439, type: "gas" },
+  { name: "Valenzuela McArthur Hwy", lat: 14.6973, lng: 120.9836, type: "gas" },
+  { name: "Fairview", lat: 14.7316, lng: 121.0624, type: "gas" },
+  { name: "Novaliches", lat: 14.7175, lng: 121.0395, type: "gas" },
+  { name: "Marikina Riverbanks", lat: 14.6382, lng: 121.1001, type: "gas" },
+  { name: "Pasig Kapasigan", lat: 14.5758, lng: 121.0855, type: "gas" },
+  { name: "Taguig McKinley Rd", lat: 14.5469, lng: 121.0523, type: "gas" },
+  { name: "BGC 5th Ave", lat: 14.5514, lng: 121.0488, type: "gas" },
+  { name: "Muntinlupa National Rd", lat: 14.4077, lng: 121.0439, type: "gas" },
+  { name: "Las Piñas Zapote", lat: 14.4502, lng: 120.9843, type: "gas" },
+  { name: "San Juan Greenhills", lat: 14.6011, lng: 121.0351, type: "gas" },
+  { name: "Pandacan", lat: 14.5889, lng: 121.0025, type: "gas" },
 ];
 
 const STATIONS = RAW_STATIONS.map((s, i) => {
@@ -78,9 +93,10 @@ const STATIONS = RAW_STATIONS.map((s, i) => {
   return {
     id: `st${seed}`,
     ...s,
-    address: `${s.name.replace(/^PitStop /, "")}, Metro Manila, Philippines`,
+    address: `${s.name}, Metro Manila, Philippines`,
     manager: dummyManager(seed),
     territoryManager: dummyTerritoryManager(seed),
+    status: dummyStatus(seed),
     score: null,
     subscores: null,
   };
@@ -102,10 +118,9 @@ let map;
 let markers = {};
 let infoWindow;
 let activePoiMarkers = [];
-let showEv = true;
-let showGas = true;
 let selectedSite = null;
 let poiToggleEl = null;
+let statusFilter = null; // null = all statuses; otherwise one of STATUS_LEVELS keys
 
 /* ---------------------------------------------------------------------- */
 /* API key bootstrap                                                      */
@@ -223,16 +238,9 @@ function pinIcon(color, badgeColor) {
   };
 }
 
-function badgeColorForScore(score) {
-  if (score === null || score === undefined) return "#6b7280";
-  if (score >= 75) return "#34d399";
-  if (score >= 50) return "#fbbf24";
-  return "#f87171";
-}
-
 function iconForStation(s) {
   const color = s.type === "ev" ? "#0f9d68" : "#c0392b";
-  const badge = s.type === "candidate" ? badgeColorForScore(s.score) : null;
+  const badge = STATUS_LEVELS[s.status].color; // corner badge = operational status, for every pin
   return pinIcon(color, badge);
 }
 
@@ -263,10 +271,32 @@ function initMap() {
     markers[s.id] = marker;
   });
 
-  renderStationList();
+  renderStatusSummary();
   renderRankedList();
-  applyVisibilityFilters();
+  applyVisibilityFilters(); // also does the initial renderStationList()
 }
+
+function renderStatusSummary() {
+  const el = document.getElementById("status-summary");
+  const counts = { normal: 0, attention: 0, down: 0 };
+  STATIONS.forEach((s) => counts[s.status]++);
+  el.innerHTML = Object.keys(STATUS_LEVELS)
+    .map((key) => {
+      const level = STATUS_LEVELS[key];
+      const active = statusFilter === key ? " active" : "";
+      return `<div class="status-chip${active}" data-status="${key}"><span class="dot" style="background:${level.color}"></span>${counts[key]} ${level.label}</div>`;
+    })
+    .join("");
+}
+
+document.getElementById("status-summary").addEventListener("click", (e) => {
+  const chip = e.target.closest(".status-chip");
+  if (!chip) return;
+  const key = chip.dataset.status;
+  statusFilter = statusFilter === key ? null : key; // clicking the active chip again clears the filter
+  renderStatusSummary();
+  applyVisibilityFilters();
+});
 
 /* Floating "Show nearby POIs" switch, docked onto the map itself (via the
    Maps JS control-array API) so it stays visible regardless of which
@@ -295,13 +325,16 @@ function buildPoiMapControl() {
 }
 
 function openInfoWindow(s) {
+  const pinColor = s.type === "ev" ? "#0f9d68" : "#c0392b"; // same colors as iconForStation's pins
+  const status = STATUS_LEVELS[s.status];
   const scoreRow =
     s.type === "candidate"
       ? `<div class="iw-row"><span class="iw-label">Site score</span><span class="iw-score${s.score === null ? " iw-score-pending" : ""}">${s.score !== null ? s.score : "Not scored yet"}</span></div>`
       : "";
   infoWindow.setContent(`
-    <div class="iw-title">${escapeHtml(s.name)}</div>
+    <div class="iw-title" style="color:${pinColor}">${escapeHtml(s.name)}</div>
     <div class="iw-address">${escapeHtml(s.address)}</div>
+    <div class="iw-row"><span class="iw-label">Status</span><span style="color:${status.color};font-weight:600;">● ${status.label}</span></div>
     ${scoreRow}
     <div class="iw-row"><span class="iw-label">Branch contact person</span>${escapeHtml(s.manager.name)} · ${escapeHtml(s.manager.phone)}</div>
     <div class="iw-row"><span class="iw-label">Site territory manager</span>${escapeHtml(s.territoryManager.name)} · ${escapeHtml(s.territoryManager.phone)}</div>
@@ -317,37 +350,31 @@ function escapeHtml(str) {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Visibility toggles + Network tab list                                  */
+/* Status filter + Network tab list                                       */
 /* ---------------------------------------------------------------------- */
+
+function isVisible(s) {
+  return !statusFilter || s.status === statusFilter;
+}
 
 function applyVisibilityFilters() {
   STATIONS.forEach((s) => {
-    const isEv = s.type === "ev";
-    const visible = isEv ? showEv : showGas;
-    markers[s.id].setMap(visible ? map : null);
+    markers[s.id].setMap(isVisible(s) ? map : null);
   });
+  renderStationList();
 }
-
-document.getElementById("toggle-ev").addEventListener("change", (e) => {
-  showEv = e.target.checked;
-  applyVisibilityFilters();
-});
-document.getElementById("toggle-gas").addEventListener("change", (e) => {
-  showGas = e.target.checked;
-  applyVisibilityFilters();
-});
 
 function renderStationList() {
   const el = document.getElementById("station-list");
   el.innerHTML = "";
-  STATIONS.forEach((s) => {
+  STATIONS.filter(isVisible).forEach((s) => {
     const row = document.createElement("div");
     row.className = "station-row";
-    const isEv = s.type === "ev";
+    const status = STATUS_LEVELS[s.status];
     row.innerHTML = `
-      <span class="dot ${isEv ? "ev" : "gas"}"></span>
+      <span class="dot" style="background:${status.color}"></span>
       <span class="name">${escapeHtml(s.name)}</span>
-      <span class="badge">${isEv ? "EV" : s.type === "candidate" ? "Candidate" : "Gas"}</span>
+      <span class="badge" style="color:${status.color}">${status.label}</span>
     `;
     row.addEventListener("click", () => {
       // Pan + open the on-pin popup only — keep this tab/list in view instead
@@ -572,9 +599,15 @@ function showSiteDetail(s) {
         </div>`
       : "";
 
+  const status = STATUS_LEVELS[s.status];
   content.innerHTML = `
     <div class="detail-title">${escapeHtml(s.name)}</div>
     <div class="detail-address">${escapeHtml(s.address)}</div>
+
+    <div class="detail-section">
+      <h4>Status</h4>
+      <div style="color:${status.color};font-weight:600;">● ${status.label}</div>
+    </div>
 
     ${scoreBlock}
 
