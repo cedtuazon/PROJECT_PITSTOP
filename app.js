@@ -653,15 +653,20 @@ function showSiteDetail(s) {
 
   const inventoryRows = s.inventory
     .map((p) => {
-      const barColor = p.stockPct < 25 ? "#ef4444" : p.stockPct < 50 ? "#f59e0b" : "#22c55e";
+      // < 50% red, < 80% yellow, 80-100% green
+      const stockColor = p.stockPct < 50 ? "#ef4444" : p.stockPct < 80 ? "#f59e0b" : "#22c55e";
       return `
         <div class="inventory-item">
           <div class="inventory-head">
             <span class="inventory-name">${escapeHtml(p.name)}</span>
             <span class="inventory-octane">${escapeHtml(p.octane)}</span>
           </div>
-          <div class="inventory-bar"><div class="inventory-fill" style="width:${p.stockPct}%;background:${barColor}"></div></div>
-          <div class="inventory-meta"><span>${p.stockPct}% in stock</span><span>₱${p.price.toFixed(2)}/L</span></div>
+          <div class="inventory-bar"><div class="inventory-fill" style="width:${p.stockPct}%;background:${stockColor}"></div></div>
+          <div class="inventory-meta">
+            <span class="inventory-stock-pct" style="color:${stockColor}">${p.stockPct}% in stock</span>
+            <span>₱${p.price.toFixed(2)}/L</span>
+          </div>
+          ${p.stockPct < 50 ? `<button class="reorder-btn" data-product="${p.key}">Replenishment Order</button>` : ""}
         </div>
       `;
     })
@@ -752,6 +757,14 @@ function showSiteDetail(s) {
   }
 
   wireLocationEditor(s);
+
+  content.querySelectorAll(".reorder-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btn.textContent = "Order Placed ✓";
+      btn.disabled = true;
+      btn.classList.add("ordered");
+    });
+  });
 }
 
 function wireLocationEditor(s) {
