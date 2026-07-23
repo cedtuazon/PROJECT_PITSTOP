@@ -44,6 +44,48 @@ function dummyStatus(seed) {
   return "down";
 }
 
+const TANKER_DELAY_REASON = "Fuel delivery delayed — next tanker in transit";
+const DOWN_REASONS = [
+  "POS system offline since this morning",
+  "Power outage — backup generator inactive",
+  "Pump malfunction — site temporarily out of service",
+  "Closed for emergency equipment repair",
+  "Network connectivity lost — site running manual transactions",
+];
+function dummyIncidentReason(seed, status) {
+  if (status === "normal") return null;
+  if (status === "attention") return TANKER_DELAY_REASON;
+  return DOWN_REASONS[seed % DOWN_REASONS.length];
+}
+
+/* Dummy live tanker position + ETA, only generated for sites whose incident
+   reason is the delayed-delivery one. Position is a fabricated point a few
+   km away from the site along a random bearing — not a real GPS feed. */
+function dummyTanker(seed, station) {
+  const etaMinutes = 20 + ((seed * 31) % 70); // 20-89 min
+  const distanceKm = 2 + ((seed * 19) % 8); // 2-9 km away
+  const bearing = ((seed * 71) % 360) * (Math.PI / 180);
+  const lat = station.lat + (distanceKm * Math.cos(bearing)) / 111.32;
+  const lng = station.lng + (distanceKm * Math.sin(bearing)) / (111.32 * Math.cos((station.lat * Math.PI) / 180));
+  const driver = dummyManager(seed * 13 + 41);
+  let supervisorSeed = seed * 17 + 83;
+  let supervisor = dummyManager(supervisorSeed);
+  // dummyManager only draws from a 10x10 name pool, so guard against an
+  // accidental collision with the driver's name (loop is finite: the pool
+  // only has 100 combos, so this always terminates well before that).
+  while (supervisor.name === driver.name) {
+    supervisorSeed += 3;
+    supervisor = dummyManager(supervisorSeed);
+  }
+  return {
+    etaMinutes,
+    lat: Math.round(lat * 100000) / 100000,
+    lng: Math.round(lng * 100000) / 100000,
+    driver,
+    supervisor,
+  };
+}
+
 /* Dummy fuel lineup — brand name fictionalized (same "PitStop" treatment as the
    rest of this demo), but tiering and octane ratings mirror a real-world
    3-grade lineup: entry-level, premium/cleaning-additive, and racing-grade. */
@@ -113,13 +155,17 @@ const RAW_STATIONS = [
 
 const STATIONS = RAW_STATIONS.map((s, i) => {
   const seed = i + 1;
+  const status = dummyStatus(seed);
+  const incidentReason = dummyIncidentReason(seed, status);
   return {
     id: `st${seed}`,
     ...s,
     address: `${s.name}, Metro Manila, Philippines`,
     manager: dummyManager(seed),
     territoryManager: dummyTerritoryManager(seed),
-    status: dummyStatus(seed),
+    status,
+    incidentReason,
+    tanker: incidentReason === TANKER_DELAY_REASON ? dummyTanker(seed, s) : null,
     inventory: dummyInventory(seed),
     score: null,
     subscores: null,
@@ -167,6 +213,8 @@ let map;
 let markers = {};
 let infoWindow;
 let activePoiMarkers = [];
+let tankerMarker = null;
+let tankerRoute = null;
 let selectedSite = null;
 let poiToggleEl = null;
 let statusFilter = null; // null = all statuses; otherwise one of STATUS_LEVELS keys
@@ -197,7 +245,7 @@ function loadGoogleMaps(key) {
     window.__pitstopMapsReady = () => resolve();
     const script = document.createElement("script");
     script.id = "gmaps-script";
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places&callback=__pitstopMapsReady`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places,geometry&callback=__pitstopMapsReady`;
     script.onerror = () => reject(new Error("Failed to load Google Maps JS API — check the API key and enabled APIs."));
     document.head.appendChild(script);
   });
@@ -398,10 +446,10 @@ function openInfoWindow(s) {
   infoWindow.setContent(`
     <div class="iw-title" style="color:${pinColor}">${escapeHtml(s.name)}</div>
     <div class="iw-address">${escapeHtml(s.address)}</div>
-    <div class="iw-row"><span class="iw-label">Status</span><span style="color:${status.color};font-weight:600;">● ${status.label}</span></div>
+    <div class="iw-row"><span class="iw-label" style="color:${pinColor};font-weight:700;">Status</span><span style="color:${status.color};font-weight:600;">● ${status.label}</span>${s.incidentReason ? `<div style="font-size:13px;color:#666;margin-top:2px;">${escapeHtml(s.incidentReason)}</div>` : ""}</div>
     ${scoreRow}
-    <div class="iw-row"><span class="iw-label">Branch contact person</span>${escapeHtml(s.manager.name)} · ${escapeHtml(s.manager.phone)}</div>
-    <div class="iw-row"><span class="iw-label">Site territory manager</span>${escapeHtml(s.territoryManager.name)} · ${escapeHtml(s.territoryManager.phone)}</div>
+    <div class="iw-row"><span class="iw-label" style="color:${pinColor};font-weight:700;">Branch contact person</span>${escapeHtml(s.manager.name)} · ${escapeHtml(s.manager.phone)}</div>
+    <div class="iw-row"><span class="iw-label" style="color:${pinColor};font-weight:700;">Site territory manager</span>${escapeHtml(s.territoryManager.name)} · ${escapeHtml(s.territoryManager.phone)}</div>
   `);
   infoWindow.open(map, markers[s.id]);
   map.panTo({ lat: s.lat, lng: s.lng });
@@ -589,6 +637,116 @@ function clearPoiMarkers() {
   activePoiMarkers = [];
 }
 
+function clearTankerMarker() {
+  if (tankerMarker) {
+    tankerMarker.setMap(null);
+    tankerMarker = null;
+  }
+  if (tankerRoute) {
+    tankerRoute.setMap(null);
+    tankerRoute = null;
+  }
+}
+
+function tankerIcon() {
+  const size = 31;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  ctx.beginPath();
+  ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2);
+  ctx.fillStyle = "#6366f1";
+  ctx.fill();
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.font = "18px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("🚛", size / 2, size / 2 + 1);
+  return {
+    url: canvas.toDataURL(),
+    scaledSize: new google.maps.Size(size, size),
+    anchor: new google.maps.Point(size / 2, size / 2),
+  };
+}
+
+/* Dummy live position of the delayed delivery tanker — not a real GPS feed,
+   just a fabricated point + dashed route line to whichever site is selected. */
+/* Calls the Routes API directly (no JS-library wrapper exists for it, unlike
+   Places — same pattern as our Places (New) calls, just raw fetch here).
+   Requires "Routes API" enabled on the same GCP project/key. */
+async function fetchTankerRoute(origin, destination) {
+  const key = getStoredKey();
+  if (!key) return null;
+  try {
+    const resp = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
+      },
+      body: JSON.stringify({
+        origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
+        destination: { location: { latLng: { latitude: destination.lat, longitude: destination.lng } } },
+        travelMode: "DRIVE",
+      }),
+    });
+    if (!resp.ok) {
+      console.error("Routes API error:", resp.status, await resp.text());
+      return null;
+    }
+    const data = await resp.json();
+    const route = data.routes && data.routes[0];
+    if (!route || !route.polyline) return null;
+    const path = google.maps.geometry.encoding.decodePath(route.polyline.encodedPolyline);
+    const durationMinutes = Math.round(parseInt(route.duration, 10) / 60);
+    return { path, durationMinutes };
+  } catch (e) {
+    console.error("Routes API request failed:", e);
+    return null;
+  }
+}
+
+function showTankerMarker(s) {
+  clearTankerMarker();
+  if (!s.tanker) return;
+  const pos = { lat: s.tanker.lat, lng: s.tanker.lng };
+  const dest = { lat: s.lat, lng: s.lng };
+
+  tankerMarker = new google.maps.Marker({
+    position: pos,
+    map,
+    icon: tankerIcon(),
+    title: `Tanker en route — ETA ${s.tanker.etaMinutes} min (estimated)`,
+  });
+  // Straight-line placeholder shown immediately while the real route loads.
+  tankerRoute = new google.maps.Polyline({
+    path: [pos, dest],
+    map,
+    strokeColor: "#f97316",
+    strokeOpacity: 0,
+    icons: [{ icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 3 }, offset: "0", repeat: "10px" }],
+  });
+
+  fetchTankerRoute(pos, dest).then((route) => {
+    if (!route || selectedSite !== s || !tankerMarker) return; // site changed or panel closed meanwhile
+    tankerRoute.setMap(null);
+    tankerRoute = new google.maps.Polyline({
+      path: route.path,
+      map,
+      strokeColor: "#f97316",
+      strokeOpacity: 0.9,
+      strokeWeight: 3,
+    });
+    tankerMarker.setTitle(`Tanker en route — ETA ${route.durationMinutes} min`);
+    const etaEl = document.querySelector(".tanker-eta");
+    if (etaEl) etaEl.textContent = `${route.durationMinutes} min`;
+  });
+}
+
 function poiIcon(color) {
   const size = 18;
   const canvas = document.createElement("canvas");
@@ -645,6 +803,7 @@ function showSiteDetail(s) {
   const content = document.getElementById("site-detail-content");
   panel.classList.remove("hidden");
   clearPoiMarkers();
+  showTankerMarker(s);
   selectedSite = s;
 
   const poiRows = POI_CATEGORIES.map(
@@ -695,7 +854,7 @@ function showSiteDetail(s) {
   const poiSection = siteSelectionActive
     ? `<div class="detail-section">
         <h4>Nearby POIs (500m)</h4>
-        <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">Use the "Show nearby POIs" switch on the map to toggle these on/off.</div>
+        <div style="font-size:13px;color:#6b7280;margin-bottom:6px;">Use the "Show nearby POIs" switch on the map to toggle these on/off.</div>
         ${poiRows}
       </div>`
     : "";
@@ -712,7 +871,7 @@ function showSiteDetail(s) {
         <button id="edit-location-btn" class="secondary-btn">Edit Location</button>
       </div>
       <div id="location-edit" class="hidden">
-        <div style="font-size:12px;color:#6b7280;margin-bottom:6px;">Drag the pin on the map, or type exact coordinates:</div>
+        <div style="font-size:13px;color:#6b7280;margin-bottom:6px;">Drag the pin on the map, or type exact coordinates:</div>
         <div class="location-inputs">
           <label>Lat <input type="number" step="0.00001" id="edit-lat" value="${s.lat}" /></label>
           <label>Lng <input type="number" step="0.00001" id="edit-lng" value="${s.lng}" /></label>
@@ -727,6 +886,30 @@ function showSiteDetail(s) {
     <div class="detail-section">
       <h4>Status</h4>
       <div style="color:${status.color};font-weight:600;">● ${status.label}</div>
+      ${s.incidentReason ? `<div style="font-size:13px;color:#6b7280;margin-top:4px;">${escapeHtml(s.incidentReason)}</div>` : ""}
+      ${s.tanker ? `
+        <div class="tanker-info">
+          <span><span style="font-size:16px;">🚛</span> Tanker ETA</span>
+          <span class="tanker-eta">${s.tanker.etaMinutes} min</span>
+        </div>
+        <div style="font-size:13px;color:#6b7280;margin-top:2px;">Live position shown on map (${s.tanker.lat.toFixed(4)}, ${s.tanker.lng.toFixed(4)})</div>
+        <div class="tanker-people">
+          <div class="tanker-person">
+            <span class="tanker-person-label">Driver</span>
+            <span>${escapeHtml(s.tanker.driver.name)}</span>
+            <span class="tanker-person-label">Contact Number</span>
+            <span>${escapeHtml(s.tanker.driver.phone)}</span>
+            <button class="call-btn" data-phone="${escapeHtml(s.tanker.driver.phone)}">📞 Call</button>
+          </div>
+          <div class="tanker-person">
+            <span class="tanker-person-label">Dispatch Manager</span>
+            <span>${escapeHtml(s.tanker.supervisor.name)}</span>
+            <span class="tanker-person-label">Contact Number</span>
+            <span>${escapeHtml(s.tanker.supervisor.phone)}</span>
+            <button class="call-btn" data-phone="${escapeHtml(s.tanker.supervisor.phone)}">📞 Call</button>
+          </div>
+        </div>
+      ` : ""}
     </div>
 
     ${scoreBlock}
@@ -738,14 +921,14 @@ function showSiteDetail(s) {
 
     <div class="detail-section">
       <h4>Branch contact person</h4>
-      <div>${escapeHtml(s.manager.name)}</div>
-      <div style="color:#6b7280;font-size:12px;">${escapeHtml(s.manager.phone)}</div>
+      <div style="font-size:13px;">${escapeHtml(s.manager.name)}</div>
+      <div style="color:#6b7280;font-size:13px;">${escapeHtml(s.manager.phone)}</div>
     </div>
 
     <div class="detail-section">
       <h4>Site territory manager</h4>
-      <div>${escapeHtml(s.territoryManager.name)}</div>
-      <div style="color:#6b7280;font-size:12px;">${escapeHtml(s.territoryManager.phone)} · ${escapeHtml(s.territoryManager.territory)}</div>
+      <div style="font-size:13px;">${escapeHtml(s.territoryManager.name)}</div>
+      <div style="color:#6b7280;font-size:13px;">${escapeHtml(s.territoryManager.phone)} · ${escapeHtml(s.territoryManager.territory)}</div>
     </div>
 
     ${poiSection}
@@ -760,9 +943,20 @@ function showSiteDetail(s) {
 
   content.querySelectorAll(".reorder-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      btn.textContent = "Order Placed ✓";
+      const hours = 1 + Math.floor(Math.random() * 5); // 1-5h
+      const mins = Math.floor(Math.random() * 60);
+      btn.textContent = `Order Placed — arriving in ${hours}h ${mins}m`;
       btn.disabled = true;
       btn.classList.add("ordered");
+    });
+  });
+
+  content.querySelectorAll(".call-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      // Demo-only — no real call is placed.
+      btn.textContent = `📞 Calling ${btn.dataset.phone}...`;
+      btn.disabled = true;
+      btn.classList.add("calling");
     });
   });
 }
@@ -825,6 +1019,7 @@ function wireLocationEditor(s) {
 document.getElementById("close-detail").addEventListener("click", () => {
   document.getElementById("site-detail").classList.add("hidden");
   clearPoiMarkers();
+  clearTankerMarker();
   selectedSite = null;
   if (poiToggleEl) poiToggleEl.checked = false;
 });
