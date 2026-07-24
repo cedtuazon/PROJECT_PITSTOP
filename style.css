@@ -277,6 +277,14 @@ html, body {
 }
 .tanker-eta { font-weight: 700; color: #4338ca; }
 
+.replenishment-info {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 13px; color: #4b5563; margin-top: 6px;
+  background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px;
+  padding: 6px 8px;
+}
+.replenishment-day { font-weight: 700; color: #15803d; }
+
 .tanker-people { margin-top: 8px; }
 .tanker-person {
   display: grid; grid-template-columns: auto 1fr; gap: 2px 8px;

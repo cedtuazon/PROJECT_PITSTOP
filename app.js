@@ -58,11 +58,18 @@ function dummyIncidentReason(seed, status) {
   return DOWN_REASONS[seed % DOWN_REASONS.length];
 }
 
-/* Dummy live tanker position + ETA, only generated for sites whose incident
+/* Dummy live tanker position + delay, only generated for sites whose incident
    reason is the delayed-delivery one. Position is a fabricated point a few
-   km away from the site along a random bearing — not a real GPS feed. */
+   km away from the site along a random bearing — not a real GPS feed. The
+   tanker was scheduled for one of the off-peak truck-ban hours but is now
+   running late, so we show both the original slot and the new ETA. */
 function dummyTanker(seed, station) {
-  const etaMinutes = 20 + ((seed * 31) % 70); // 20-89 min
+  const delayMinutes = 15 + ((seed * 31) % 60); // 15-74 min late
+  const scheduledHour24 = OFFPEAK_HOURS_24[seed % OFFPEAK_HOURS_24.length];
+  let etaHour24 = scheduledHour24 + Math.floor(delayMinutes / 60);
+  const etaMinute = delayMinutes % 60;
+  etaHour24 = etaHour24 % 24;
+
   const distanceKm = 2 + ((seed * 19) % 8); // 2-9 km away
   const bearing = ((seed * 71) % 360) * (Math.PI / 180);
   const lat = station.lat + (distanceKm * Math.cos(bearing)) / 111.32;
@@ -78,12 +85,29 @@ function dummyTanker(seed, station) {
     supervisor = dummyManager(supervisorSeed);
   }
   return {
-    etaMinutes,
+    scheduledTime: formatClock(scheduledHour24, 0),
+    etaTime: formatClock(etaHour24, etaMinute),
+    delayMinutes,
     lat: Math.round(lat * 100000) / 100000,
     lng: Math.round(lng * 100000) / 100000,
     driver,
     supervisor,
   };
+}
+
+/* Dummy routine delivery schedule — only shown for Operational sites, as a
+   counterpart to the tanker/incident info shown for delayed ones. Metro
+   Manila's truck ban blocks deliveries during the day, so tankers only run
+   in the 10PM-4AM off-peak window; high demand means a delivery every day. */
+const OFFPEAK_HOURS_24 = [22, 23, 0, 1, 2, 3, 4]; // 10PM - 4AM
+function formatClock(hour24, minute) {
+  const period = hour24 < 12 ? "AM" : "PM";
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${period}`;
+}
+function dummyReplenishmentSchedule(seed) {
+  const hour24 = OFFPEAK_HOURS_24[seed % OFFPEAK_HOURS_24.length];
+  return { time: formatClock(hour24, 0), frequency: "Everyday" };
 }
 
 /* Dummy fuel lineup — brand name fictionalized (same "PitStop" treatment as the
@@ -166,6 +190,7 @@ const STATIONS = RAW_STATIONS.map((s, i) => {
     status,
     incidentReason,
     tanker: incidentReason === TANKER_DELAY_REASON ? dummyTanker(seed, s) : null,
+    replenishmentSchedule: status === "normal" ? dummyReplenishmentSchedule(seed) : null,
     inventory: dummyInventory(seed),
     score: null,
     subscores: null,
@@ -494,8 +519,12 @@ function renderStationList() {
     `;
     row.addEventListener("click", () => {
       // Pan + open the on-pin popup only — keep this tab/list in view instead
-      // of covering it with the full detail panel (that stays a marker-click action).
+      // of covering it with the full detail panel (that stays a dblclick/marker-click action).
       openInfoWindow(s);
+    });
+    row.addEventListener("dblclick", () => {
+      openInfoWindow(s);
+      showSiteDetail(s);
     });
     el.appendChild(row);
   });
@@ -720,7 +749,7 @@ function showTankerMarker(s) {
     position: pos,
     map,
     icon: tankerIcon(),
-    title: `Tanker en route — ETA ${s.tanker.etaMinutes} min (estimated)`,
+    title: `Tanker delayed — scheduled ${s.tanker.scheduledTime}, new ETA ${s.tanker.etaTime}`,
   });
   // Straight-line placeholder shown immediately while the real route loads.
   tankerRoute = new google.maps.Polyline({
@@ -889,9 +918,10 @@ function showSiteDetail(s) {
       ${s.incidentReason ? `<div style="font-size:13px;color:#6b7280;margin-top:4px;">${escapeHtml(s.incidentReason)}</div>` : ""}
       ${s.tanker ? `
         <div class="tanker-info">
-          <span><span style="font-size:16px;">🚛</span> Tanker ETA</span>
-          <span class="tanker-eta">${s.tanker.etaMinutes} min</span>
+          <span><span style="font-size:16px;">🚛</span> New ETA</span>
+          <span class="tanker-eta">${s.tanker.etaTime}</span>
         </div>
+        <div style="font-size:13px;color:#6b7280;margin-top:2px;">Scheduled for ${s.tanker.scheduledTime}, delayed ${s.tanker.delayMinutes} min</div>
         <div style="font-size:13px;color:#6b7280;margin-top:2px;">Live position shown on map (${s.tanker.lat.toFixed(4)}, ${s.tanker.lng.toFixed(4)})</div>
         <div class="tanker-people">
           <div class="tanker-person">
@@ -909,6 +939,13 @@ function showSiteDetail(s) {
             <button class="call-btn" data-phone="${escapeHtml(s.tanker.supervisor.phone)}">📞 Call</button>
           </div>
         </div>
+      ` : ""}
+      ${s.replenishmentSchedule ? `
+        <div class="replenishment-info">
+          <span>🗓️ Next Delivery</span>
+          <span class="replenishment-day">${s.replenishmentSchedule.time}</span>
+        </div>
+        <div style="font-size:13px;color:#6b7280;margin-top:2px;">${s.replenishmentSchedule.frequency} · off-peak window (10PM-4AM, truck ban compliant)</div>
       ` : ""}
     </div>
 
